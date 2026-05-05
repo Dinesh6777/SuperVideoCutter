@@ -23,3 +23,10 @@ HOW TO USE:
 4. Repeat for as many clips as you want.
 5. Click "Process All Lossless Cuts" and choose an output folder.
 6. The app will generate clips instantly without quality loss.
+
+Build command:
+mini without .net runtime - 500KB
+dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:IncludeNativeLibrariesForSelfExtract=true -o ./PortableApp
+
+Portable app with dotnet runtime 125 mb
+dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:IncludeNativeLibrariesForSelfExtract=true -o ./PortableApp

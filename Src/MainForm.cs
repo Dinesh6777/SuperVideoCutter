@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Drawing;
 using System.Runtime.InteropServices;
 
 namespace SuperVideoCutter;
@@ -22,14 +23,27 @@ public partial class MainForm : Form
     public MainForm()
     {
         InitializeComponent();
-        
-        // Timer to refresh the labels and slider position
+
+        // Load Icon for Titlebar and Taskbar[cite: 1]
+        try
+        {
+            string iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SVC_Appicon.ico");
+            if (File.Exists(iconPath))
+            {
+                this.Icon = new Icon(iconPath);
+            }
+        }
+        catch { /* Fallback if icon is corrupt */ }
+
         _playbackTimer = new System.Windows.Forms.Timer { Interval = 1000 };
         _playbackTimer.Tick += (s, e) => {
-            if (_isPlaying && tkTimeline.Value < tkTimeline.Maximum) {
+            if (_isPlaying && tkTimeline.Value < tkTimeline.Maximum)
+            {
                 tkTimeline.Value++;
                 UpdateLabels();
-            } else if (tkTimeline.Value >= tkTimeline.Maximum) {
+            }
+            else if (tkTimeline.Value >= tkTimeline.Maximum)
+            {
                 StopPlayback();
             }
         };
@@ -48,8 +62,8 @@ public partial class MainForm : Form
     {
         dgvCuts.Columns.Clear();
         dgvCuts.AutoGenerateColumns = false;
-        dgvCuts.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "StartTime", HeaderText = "Start" });
-        dgvCuts.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "EndTime", HeaderText = "End" });
+        dgvCuts.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "StartTime", HeaderText = "Start", Width = 90 });
+        dgvCuts.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "EndTime", HeaderText = "End", Width = 90 });
         dgvCuts.Columns.Add(new DataGridViewButtonColumn { Name = "PreviewBtn", Text = "Preview", UseColumnTextForButtonValue = true, HeaderText = "Preview" });
         dgvCuts.Columns.Add(new DataGridViewButtonColumn { Name = "DeleteBtn", Text = "Delete", UseColumnTextForButtonValue = true, HeaderText = "Delete" });
 
@@ -62,7 +76,6 @@ public partial class MainForm : Form
 
     private void UpdateLabels()
     {
-        // Enforces strict 00:00:00 format
         lblElapsed.Text = TimeSpan.FromSeconds(tkTimeline.Value).ToString(@"hh\:mm\:ss");
         double remaining = Math.Max(0, _durationSeconds - tkTimeline.Value);
         lblTotalTime.Text = "-" + TimeSpan.FromSeconds(remaining).ToString(@"hh\:mm\:ss");
@@ -101,18 +114,18 @@ public partial class MainForm : Form
     private void TogglePlayPause()
     {
         if (_isPlaying) StopPlayback();
-        else StartFFplay(TimeSpan.FromSeconds(tkTimeline.Value).ToString(@"hh\:mm\:ss"));
+        else StartFFplay(lblElapsed.Text);
     }
 
     private void StartFFplay(string timestamp)
     {
         if (string.IsNullOrEmpty(_inputPath)) return;
-        try {
+        try
+        {
             _ffplayProcess?.Kill();
             ProcessStartInfo psi = new("ffplay.exe", $"-ss {timestamp} -i \"{_inputPath}\" -noborder -x {pnlPreview.Width} -y {pnlPreview.Height} -autoexit")
             { CreateNoWindow = true, UseShellExecute = false };
             _ffplayProcess = Process.Start(psi);
-            
             if (_isPlaying) _playbackTimer.Start();
             btnPlayPause.Text = "⏸ Pause";
 
@@ -124,23 +137,27 @@ public partial class MainForm : Form
                     });
             });
             _isPlaying = true;
-        } catch { MessageBox.Show("ffplay.exe missing."); }
+        }
+        catch { MessageBox.Show("ffplay.exe missing."); }
     }
 
     private async Task<double> GetVideoDuration(string path)
     {
-        try {
+        try
+        {
             var psi = new ProcessStartInfo("ffprobe.exe", $"-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{path}\"")
             { RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true };
             using var process = Process.Start(psi);
             return double.Parse((await process!.StandardOutput.ReadToEndAsync()).Trim());
-        } catch { return 0; }
+        }
+        catch { return 0; }
     }
 
     private void SeekRelative(int secs) => SeekToTime(Math.Clamp(tkTimeline.Value + secs, 0, tkTimeline.Maximum));
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
+        if (string.IsNullOrEmpty(_inputPath)) return base.ProcessCmdKey(ref msg, keyData);
         if (keyData == Keys.Space) { TogglePlayPause(); return true; }
         if (keyData == Keys.Left) { SeekRelative(-5); return true; }
         if (keyData == Keys.Right) { SeekRelative(5); return true; }
@@ -150,18 +167,37 @@ public partial class MainForm : Form
     private async void btnCutAll_Click(object? sender, EventArgs e)
     {
         if (string.IsNullOrEmpty(_inputPath) || _clips.Count == 0) return;
-        using FolderBrowserDialog fbd = new();
-        if (fbd.ShowDialog() == DialogResult.OK)
+
+        string sourceDir = Path.GetDirectoryName(_inputPath)!;
+        string baseName = Path.GetFileNameWithoutExtension(_inputPath);
+        string ext = Path.GetExtension(_inputPath);
+
+        btnCutAll.Enabled = false;
+        foreach (var clip in _clips)
         {
-            btnCutAll.Enabled = false;
-            foreach (var clip in _clips)
-            {
-                string output = Path.Combine(fbd.SelectedPath, $"cut_{DateTime.Now:ssfff}.mp4");
-                string args = $"-ss {clip.StartTime} -to {clip.EndTime} -i \"{_inputPath}\" -c copy -y \"{output}\"";
-                await Task.Run(() => Process.Start(new ProcessStartInfo("ffmpeg.exe", args) { CreateNoWindow = true })?.WaitForExit());
-            }
-            btnCutAll.Enabled = true;
-            MessageBox.Show("Cuts complete!");
+            string cleanStart = clip.StartTime.Replace(":", "-");
+            string cleanEnd = clip.EndTime.Replace(":", "-");
+            string output = Path.Combine(sourceDir, $"{baseName}_{cleanStart}_{cleanEnd}{ext}");
+            
+            string args = $"-ss {clip.StartTime} -to {clip.EndTime} -i \"{_inputPath}\" -c copy -y \"{output}\"";
+            await Task.Run(() => Process.Start(new ProcessStartInfo("ffmpeg.exe", args) { CreateNoWindow = true })?.WaitForExit());
         }
+        btnCutAll.Enabled = true;
+        ShowCompletionDialog(sourceDir);
+    }
+
+    private void ShowCompletionDialog(string path)
+    {
+        Form diag = new Form {
+            Text = "Status", Size = new Size(350, 150), 
+            StartPosition = FormStartPosition.CenterParent, 
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MaximizeBox = false, MinimizeBox = false
+        };
+        Label lbl = new Label { Text = "All lossless cuts are completed.", Dock = DockStyle.Top, Height = 50, TextAlign = ContentAlignment.MiddleCenter };
+        Button btn = new Button { Text = "Open Folder", Dock = DockStyle.Bottom, Height = 40 };
+        btn.Click += (s, e) => { Process.Start("explorer.exe", path); diag.Close(); };
+        diag.Controls.Add(lbl); diag.Controls.Add(btn);
+        diag.ShowDialog();
     }
 }

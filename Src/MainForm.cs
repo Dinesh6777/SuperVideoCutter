@@ -23,6 +23,7 @@ public partial class MainForm : Form
     {
         InitializeComponent();
         
+        // Timer to refresh the labels and slider position
         _playbackTimer = new System.Windows.Forms.Timer { Interval = 1000 };
         _playbackTimer.Tick += (s, e) => {
             if (_isPlaying && tkTimeline.Value < tkTimeline.Maximum) {
@@ -61,7 +62,7 @@ public partial class MainForm : Form
 
     private void UpdateLabels()
     {
-        // Format elapsed and remaining time as hh:mm:ss
+        // Enforces strict 00:00:00 format
         lblElapsed.Text = TimeSpan.FromSeconds(tkTimeline.Value).ToString(@"hh\:mm\:ss");
         double remaining = Math.Max(0, _durationSeconds - tkTimeline.Value);
         lblTotalTime.Text = "-" + TimeSpan.FromSeconds(remaining).ToString(@"hh\:mm\:ss");
@@ -91,7 +92,7 @@ public partial class MainForm : Form
 
     private void StopPlayback()
     {
-        _ffplayProcess?.Kill();
+        try { _ffplayProcess?.Kill(); } catch { }
         _playbackTimer.Stop();
         btnPlayPause.Text = "▶ Play";
         _isPlaying = false;
@@ -132,8 +133,7 @@ public partial class MainForm : Form
             var psi = new ProcessStartInfo("ffprobe.exe", $"-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{path}\"")
             { RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true };
             using var process = Process.Start(psi);
-            string output = await process!.StandardOutput.ReadToEndAsync();
-            return double.TryParse(output.Trim(), out double res) ? res : 0;
+            return double.Parse((await process!.StandardOutput.ReadToEndAsync()).Trim());
         } catch { return 0; }
     }
 

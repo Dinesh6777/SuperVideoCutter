@@ -14,41 +14,45 @@ partial class MainForm
 
     private void InitializeComponent()
     {
+        // Layout Root
         this.pnlPreview = new Panel { Dock = DockStyle.Top, Height = 350, BackColor = Color.Black };
 
         // Timeline Container
-        Panel pnlTimeline = new Panel { Dock = DockStyle.Top, Height = 60 };
-        this.lblElapsed = new Label { Text = "00:00:00", Location = new Point(5, 20), Width = 85, Font = new Font("Consolas", 10F) };
+        Panel pnlTimeline = new Panel { Dock = DockStyle.Top, Height = 65 };
+        this.lblElapsed = new Label { Text = "00:00:00", Location = new Point(5, 22), Width = 85, Font = new Font("Consolas", 10F), ForeColor = Color.Black };
         this.tkTimeline = new TrackBar { Location = new Point(95, 12), Width = 440, Height = 45, TickStyle = TickStyle.None, Anchor = AnchorStyles.Left | AnchorStyles.Right };
-        this.lblTotalTime = new Label { Text = "-00:00:00", Location = new Point(540, 20), Width = 100, Anchor = AnchorStyles.Right, Font = new Font("Consolas", 10F) };
+        this.lblTotalTime = new Label { Text = "-00:00:00", Location = new Point(540, 22), Width = 100, Anchor = AnchorStyles.Right, Font = new Font("Consolas", 10F), ForeColor = Color.Black };
         pnlTimeline.Controls.AddRange(new Control[] { lblElapsed, tkTimeline, lblTotalTime });
 
-        // Control Grid with Padding
-        this.tlpControls = new TableLayoutPanel { Dock = DockStyle.Top, Height = 145, ColumnCount = 4, RowCount = 2 };
+        // Fixed Control Grid[cite: 1]
+        this.tlpControls = new TableLayoutPanel { Dock = DockStyle.Top, Height = 170, ColumnCount = 4, RowCount = 2 };
         this.tlpControls.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
         this.tlpControls.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
         this.tlpControls.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
         this.tlpControls.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+        // Use Absolute Heights to prevent clipping[cite: 1]
+        this.tlpControls.RowStyles.Add(new RowStyle(SizeType.Absolute, 80F));
+        this.tlpControls.RowStyles.Add(new RowStyle(SizeType.Absolute, 80F));
 
-        // Added Padding via Margins
-        this.btnBack5 = new Button { Text = "⏪ -5s", Dock = DockStyle.Fill, Margin = new Padding(8) };
-        this.btnPlayPause = new Button { Text = "▶ Play", Dock = DockStyle.Fill, Margin = new Padding(12), Font = new Font("Segoe UI", 10F, FontStyle.Bold) };
-        this.btnForward5 = new Button { Text = "+5s ⏩", Dock = DockStyle.Fill, Margin = new Padding(8) };
-        this.btnBrowse = new Button { Text = "Browse Video", Dock = DockStyle.Fill, Margin = new Padding(12), BackColor = Color.Gainsboro };
+        // Buttons with Fixed ForeColor and Margins (No internal padding)[cite: 1]
+        this.btnBack5 = new Button { Text = "⏪ -5s", Dock = DockStyle.Fill, Margin = new Padding(5), ForeColor = Color.Black };
+        this.btnPlayPause = new Button { Text = "▶ Play", Dock = DockStyle.Fill, Margin = new Padding(5), ForeColor = Color.Black, Font = new Font("Segoe UI", 10F, FontStyle.Bold) };
+        this.btnForward5 = new Button { Text = "+5s ⏩", Dock = DockStyle.Fill, Margin = new Padding(5), ForeColor = Color.Black };
+        this.btnBrowse = new Button { Text = "Browse Video", Dock = DockStyle.Fill, Margin = new Padding(5), ForeColor = Color.Black, BackColor = Color.Gainsboro };
 
-        // Renamed Trim Buttons[cite: 1]
+        // Mark Start / End Panels[cite: 1]
         Panel pnlStart = new Panel { Dock = DockStyle.Fill };
-        this.btnSetStart = new Button { Text = "Mark Start", Width = 90, Height = 35, Location = new Point(5, 8) };
-        this.txtStart = new TextBox { Text = "00:00:00", Location = new Point(100, 12), Width = 70 };
+        this.btnSetStart = new Button { Text = "Mark Start", Width = 90, Height = 50, Location = new Point(5, 10), ForeColor = Color.Black };
+        this.txtStart = new TextBox { Text = "00:00:00", Location = new Point(100, 25), Width = 70 };
         pnlStart.Controls.AddRange(new Control[] { btnSetStart, txtStart });
 
         Panel pnlEnd = new Panel { Dock = DockStyle.Fill };
-        this.btnSetEnd = new Button { Text = "Mark End", Width = 90, Height = 35, Location = new Point(5, 8) };
-        this.txtEnd = new TextBox { Text = "00:00:00", Location = new Point(100, 12), Width = 70 };
+        this.btnSetEnd = new Button { Text = "Mark End", Width = 90, Height = 50, Location = new Point(5, 10), ForeColor = Color.Black };
+        this.txtEnd = new TextBox { Text = "00:00:00", Location = new Point(100, 25), Width = 70 };
         pnlEnd.Controls.AddRange(new Control[] { btnSetEnd, txtEnd });
 
-        this.lblFile = new Label { Text = "No file", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft };
-        this.btnAddCut = new Button { Text = "Add to Cut", Width = 110, Height = 40, Anchor = AnchorStyles.None, BackColor = Color.LightSkyBlue };
+        this.lblFile = new Label { Text = "No file", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.Black };
+        this.btnAddCut = new Button { Text = "Add to Cut", Size = new Size(130, 50), Anchor = AnchorStyles.None, BackColor = Color.LightSkyBlue, ForeColor = Color.Black };
 
         this.tlpControls.Controls.Add(btnBack5, 0, 0);
         this.tlpControls.Controls.Add(btnPlayPause, 1, 0);
@@ -59,8 +63,9 @@ partial class MainForm
         this.tlpControls.Controls.Add(lblFile, 2, 1);
         this.tlpControls.Controls.Add(btnAddCut, 3, 1);
 
+        // Grid and Bottom Action[cite: 1]
         this.dgvCuts = new DataGridView { Dock = DockStyle.Fill, BackgroundColor = Color.White, AllowUserToAddRows = false, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill };
-        this.btnCutAll = new Button { Text = "PROCESS ALL LOSSLESS CUTS", Dock = DockStyle.Bottom, Height = 70, BackColor = Color.SteelBlue, ForeColor = Color.White, Font = new Font("Segoe UI", 11F, FontStyle.Bold) };
+        this.btnCutAll = new Button { Text = "PROCESS ALL LOSSLESS CUTS", Dock = DockStyle.Bottom, Height = 80, BackColor = Color.SteelBlue, ForeColor = Color.White, Font = new Font("Segoe UI", 12F, FontStyle.Bold) };
 
         this.Controls.Add(dgvCuts);
         this.Controls.Add(tlpControls);
@@ -69,10 +74,10 @@ partial class MainForm
         this.Controls.Add(btnCutAll);
 
         this.Text = "Super Video Cutter Pro";
-        this.Size = new Size(740, 980);
+        this.Size = new Size(760, 1000);
         this.StartPosition = FormStartPosition.CenterScreen;
 
-        // Events
+        // Event wiring[cite: 1]
         this.btnBrowse.Click += btnBrowse_Click;
         this.btnSetStart.Click += (s, e) => txtStart.Text = lblElapsed.Text;
         this.btnSetEnd.Click += (s, e) => txtEnd.Text = lblElapsed.Text;

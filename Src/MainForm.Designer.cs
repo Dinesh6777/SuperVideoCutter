@@ -22,9 +22,11 @@ partial class MainForm
         this.pnlPreview = new Panel { Dock = DockStyle.Top, Height = 400, BackColor = Color.Black };
 
         Panel pnlTimeline = new Panel { Dock = DockStyle.Top, Height = 65 };
-        this.lblElapsed = new Label { Text = "00:00:00", Location = new Point(5, 22), Width = 85, Font = new Font("Consolas", 10F) };
+        // Smaller font for elapsed time label[cite: 15]
+        this.lblElapsed = new Label { Text = "00:00:00", Location = new Point(5, 22), Width = 85, Font = new Font("Consolas", 8.25F) };
         this.tkTimeline = new TrackBar { Location = new Point(95, 12), Width = 550, Height = 45, TickStyle = TickStyle.None, Anchor = AnchorStyles.Left | AnchorStyles.Right };
-        this.lblTotalTime = new Label { Text = "-00:00:00", Location = new Point(650, 22), Width = 100, Anchor = AnchorStyles.Right, Font = new Font("Consolas", 10F) };
+        // Smaller font for total time label at the right side[cite: 15]
+        this.lblTotalTime = new Label { Text = "(00:00:00)", Location = new Point(650, 22), Width = 100, Anchor = AnchorStyles.Right, Font = new Font("Consolas", 8.25F) };
         pnlTimeline.Controls.AddRange(new Control[] { lblElapsed, tkTimeline, lblTotalTime });
 
         this.tlpControls = new TableLayoutPanel { Dock = DockStyle.Top, Height = 170, ColumnCount = 4, RowCount = 2 };
@@ -71,16 +73,15 @@ partial class MainForm
         this.Controls.Add(pnlPreview);
         this.Controls.Add(btnCutAll);
 
-        // Corrected App Name[cite: 13]
         this.Text = "SuperVideoCutter"; 
         this.Size = new Size(850, 950); 
         this.AutoScaleMode = AutoScaleMode.Dpi;
         this.StartPosition = FormStartPosition.CenterScreen;
 
-        // Events
+        // Corrected Events[cite: 15]
         this.btnBrowse.Click += btnBrowse_Click;
-        this.btnSetStart.Click += (s, e) => txtStart.Text = lblElapsed.Text;
-        this.btnSetEnd.Click += (s, e) => txtEnd.Text = lblElapsed.Text;
+        this.btnSetStart.Click += btnSetStart_Click;
+        this.btnSetEnd.Click += btnSetEnd_Click;
         this.btnBack5.Click += (s, e) => SeekRelative(-5);
         this.btnPlayPause.Click += (s, e) => TogglePlayPause();
         this.btnForward5.Click += (s, e) => SeekRelative(5);

@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO.Compression; 
 using System.Net.Http;
+using System.Reflection; 
 using System.Runtime.InteropServices;
 
 namespace SuperVideoCutter;
@@ -19,6 +20,7 @@ public partial class MainForm : Form
     private string _ffmpegPath = "ffmpeg.exe";
     private string _ffplayPath = "ffplay.exe";
     private string _ffprobePath = "ffprobe.exe";
+    // Plugins folder correctly named[cite: 14]
     private readonly string _pluginsDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SuperVideoCutter_plugins");
 
     [DllImport("user32.dll")]
@@ -29,7 +31,7 @@ public partial class MainForm : Form
     public MainForm()
     {
         InitializeComponent();
-        SetAppIcon(); // Sets the icon for Titlebar and Taskbar[cite: 10]
+        SetAppIcon(); 
 
         this.Shown += async (s, e) => await InitializeDependenciesAsync();
 
@@ -55,10 +57,21 @@ public partial class MainForm : Form
 
     private void SetAppIcon()
     {
-        try {
-            string iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SVC_Appicon.ico");
-            if (File.Exists(iconPath)) this.Icon = new Icon(iconPath);
-        } catch { }
+        try 
+        {
+            Assembly assembly = Assembly.GetExecutingAssembly();
+            // Namespace-based resource loading is correct[cite: 14]
+            using (Stream? stream = assembly.GetManifestResourceStream("SuperVideoCutter.SVC_Appicon.ico"))
+            {
+                if (stream != null)
+                {
+                    this.Icon = new Icon(stream);
+                }
+            }
+        }
+        catch 
+        { 
+        }
     }
 
     private async Task InitializeDependenciesAsync()

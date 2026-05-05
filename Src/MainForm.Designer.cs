@@ -71,11 +71,13 @@ partial class MainForm
         this.Controls.Add(pnlPreview);
         this.Controls.Add(btnCutAll);
 
-        this.Text = "SuperVideoConverter";
-        this.Size = new Size(850, 950); // Height increased to 950[cite: 11]
+        // Corrected App Name[cite: 13]
+        this.Text = "SuperVideoCutter"; 
+        this.Size = new Size(850, 950); 
         this.AutoScaleMode = AutoScaleMode.Dpi;
         this.StartPosition = FormStartPosition.CenterScreen;
 
+        // Events
         this.btnBrowse.Click += btnBrowse_Click;
         this.btnSetStart.Click += (s, e) => txtStart.Text = lblElapsed.Text;
         this.btnSetEnd.Click += (s, e) => txtEnd.Text = lblElapsed.Text;

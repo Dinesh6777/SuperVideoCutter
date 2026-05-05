@@ -5,13 +5,21 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
+    
+    <!-- Embeds icon for Windows Explorer (Disk icon)[cite: 11] -->
     <ApplicationIcon>SVC_Appicon.ico</ApplicationIcon>
+
+    <!-- Portable Single-File Settings[cite: 1] -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained> 
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- This ensures the icon file is available to the EXE at runtime -->
-    <None Update="SVC_Appicon.ico">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    <!-- EMBED the icon as a resource so the code can access it from memory[cite: 1, 11] -->
+    <EmbeddedResource Include="SVC_Appicon.ico" />
+    
+    <!-- REMOVE any lines that use "CopyToOutputDirectory" for the icon[cite: 1] -->
   </ItemGroup>
 </Project>

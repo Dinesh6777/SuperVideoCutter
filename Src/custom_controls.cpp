@@ -332,6 +332,33 @@ struct CutsListData {
 #define DELETE_BTN_W  85
 #define DELETE_BTN_H  30
 
+void UpdateScrollbar(HWND hWnd, CutsListData* data) {
+    if (!data) return;
+    RECT rc;
+    GetClientRect(hWnd, &rc);
+    int clientHeight = rc.bottom;
+    int totalHeight = static_cast<int>(data->clips.size()) * ROW_HEIGHT;
+
+    SCROLLINFO si = { 0 };
+    si.cbSize = sizeof(si);
+    si.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
+    si.nMin = 0;
+    si.nMax = totalHeight - 1;
+    si.nPage = clientHeight;
+    si.nPos = data->scrollOffset;
+
+    SetScrollInfo(hWnd, SB_VERT, &si, TRUE);
+
+    int maxScroll = totalHeight - clientHeight;
+    if (maxScroll < 0) maxScroll = 0;
+    if (data->scrollOffset > maxScroll) {
+        data->scrollOffset = maxScroll;
+        si.nPos = data->scrollOffset;
+        SetScrollInfo(hWnd, SB_VERT, &si, TRUE);
+        InvalidateRect(hWnd, NULL, FALSE);
+    }
+}
+
 LRESULT CALLBACK CutsListWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     CutsListData* data = reinterpret_cast<CutsListData*>(GetWindowLongPtrW(hWnd, GWLP_USERDATA));
 
@@ -470,8 +497,11 @@ LRESULT CALLBACK CutsListWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
                 SetTextColor(hMemDC, COLOR_TEXT_DARK);
                 DrawTextW(hMemDC, clipNumW.c_str(), -1, &textNumRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
-                std::string startEnd = "Start: " + data->clips[i].startTime + "   →   End: " + data->clips[i].endTime;
-                std::wstring startEndW(startEnd.begin(), startEnd.end());
+                std::string startStr = data->clips[i].startTime;
+                std::string endStr = data->clips[i].endTime;
+                std::wstring startW(startStr.begin(), startStr.end());
+                std::wstring endW(endStr.begin(), endStr.end());
+                std::wstring startEndW = L"Start: " + startW + L"   \u2192   End: " + endW;
                 RECT textTimeRc = { rowRc.left + 105, rowY, width - 230, rowY + ROW_HEIGHT };
                 SetTextColor(hMemDC, COLOR_TEXT_MUTED);
                 DrawTextW(hMemDC, startEndW.c_str(), -1, &textTimeRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
@@ -527,10 +557,101 @@ LRESULT CALLBACK CutsListWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
             EndPaint(hWnd, &ps);
             return 0;
         }
+        case WM_SIZE: {
+            UpdateScrollbar(hWnd, data);
+            break;
+        }
+        case WM_VSCROLL: {
+            if (!data) break;
+            RECT rc;
+            GetClientRect(hWnd, &rc);
+            int clientHeight = rc.bottom;
+            int totalHeight = static_cast<int>(data->clips.size()) * ROW_HEIGHT;
+            int maxScroll = totalHeight - clientHeight;
+            if (maxScroll < 0) maxScroll = 0;
+
+            int newPos = data->scrollOffset;
+            int action = LOWORD(wParam);
+
+            switch (action) {
+                case SB_TOP:
+                    newPos = 0;
+                    break;
+                case SB_BOTTOM:
+                    newPos = maxScroll;
+                    break;
+                case SB_LINEUP:
+                    newPos -= 15;
+                    break;
+                case SB_LINEDOWN:
+                    newPos += 15;
+                    break;
+                case SB_PAGEUP:
+                    newPos -= clientHeight;
+                    break;
+                case SB_PAGEDOWN:
+                    newPos += clientHeight;
+                    break;
+                case SB_THUMBTRACK:
+                case SB_THUMBPOSITION: {
+                    SCROLLINFO si = { 0 };
+                    si.cbSize = sizeof(si);
+                    si.fMask = SIF_TRACKPOS;
+                    if (GetScrollInfo(hWnd, SB_VERT, &si)) {
+                        newPos = si.nTrackPos;
+                    } else {
+                        newPos = HIWORD(wParam);
+                    }
+                    break;
+                }
+            }
+
+            if (newPos < 0) newPos = 0;
+            if (newPos > maxScroll) newPos = maxScroll;
+
+            if (newPos != data->scrollOffset) {
+                data->scrollOffset = newPos;
+                SCROLLINFO si = { 0 };
+                si.cbSize = sizeof(si);
+                si.fMask = SIF_POS;
+                si.nPos = data->scrollOffset;
+                SetScrollInfo(hWnd, SB_VERT, &si, TRUE);
+                InvalidateRect(hWnd, NULL, FALSE);
+            }
+            return 0;
+        }
+        case WM_MOUSEWHEEL: {
+            if (!data) break;
+            RECT rc;
+            GetClientRect(hWnd, &rc);
+            int clientHeight = rc.bottom;
+            int totalHeight = static_cast<int>(data->clips.size()) * ROW_HEIGHT;
+            int maxScroll = totalHeight - clientHeight;
+            if (maxScroll < 0) maxScroll = 0;
+
+            int zDelta = GET_WHEEL_DELTA_WPARAM(wParam);
+            int scrollAmount = (zDelta / 120) * 30;
+
+            int newPos = data->scrollOffset - scrollAmount;
+            if (newPos < 0) newPos = 0;
+            if (newPos > maxScroll) newPos = maxScroll;
+
+            if (newPos != data->scrollOffset) {
+                data->scrollOffset = newPos;
+                SCROLLINFO si = { 0 };
+                si.cbSize = sizeof(si);
+                si.fMask = SIF_POS;
+                si.nPos = data->scrollOffset;
+                SetScrollInfo(hWnd, SB_VERT, &si, TRUE);
+                InvalidateRect(hWnd, NULL, FALSE);
+            }
+            return 0;
+        }
         case WM_USER + 1: {
             // Custom Message: Add Clip
             VideoClip* clip = reinterpret_cast<VideoClip*>(lParam);
             data->clips.push_back(*clip);
+            UpdateScrollbar(hWnd, data);
             InvalidateRect(hWnd, NULL, FALSE);
             break;
         }
@@ -539,6 +660,7 @@ LRESULT CALLBACK CutsListWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
             int index = static_cast<int>(wParam);
             if (index >= 0 && index < static_cast<int>(data->clips.size())) {
                 data->clips.erase(data->clips.begin() + index);
+                UpdateScrollbar(hWnd, data);
                 InvalidateRect(hWnd, NULL, FALSE);
             }
             break;
@@ -546,6 +668,7 @@ LRESULT CALLBACK CutsListWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
         case WM_USER + 3: {
             // Custom Message: Clear Clips
             data->clips.clear();
+            UpdateScrollbar(hWnd, data);
             InvalidateRect(hWnd, NULL, FALSE);
             break;
         }

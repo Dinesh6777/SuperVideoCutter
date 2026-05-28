@@ -597,11 +597,11 @@ void PerformLayout(int clientWidth, int clientHeight) {
 
     // List View (Middle scroll panel)
     int listTop = 587;
-    int listBottom = clientHeight - 80;
+    int listBottom = clientHeight - 50;
     MoveWindow(g_hWndCutsList, 5, listTop, clientWidth - 10, listBottom - listTop, TRUE);
 
     // Process button at the bottom
-    MoveWindow(g_hWndCutAll, 0, clientHeight - 80, clientWidth, 80, TRUE);
+    MoveWindow(g_hWndCutAll, 0, clientHeight - 50, clientWidth, 50, TRUE);
 }
 
 // WndProc Main
@@ -1359,7 +1359,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     RegisterClassW(&wc);
 
     g_hWndMain = CreateWindowExW(0, L"SuperVideoCutterMainClass", L"SuperVideoCutter",
-        WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 754, 854,
+        WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 754, 777,
         NULL, NULL, hInstance, NULL);
 
     if (!g_hWndMain) return 0;

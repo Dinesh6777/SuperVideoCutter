@@ -574,29 +574,29 @@ void PerformLayout(int clientWidth, int clientHeight) {
 
     // Grid Row 0 (Buttons -5s, -3s, Play, +3s, +5s, Browse)
     int btnW = (clientWidth - 20) / 6;
-    MoveWindow(g_hWndBack5, 5, 470, btnW, 45, TRUE);
-    MoveWindow(g_hWndBack3, 5 + btnW, 470, btnW, 45, TRUE);
-    MoveWindow(g_hWndPlayPause, 5 + 2 * btnW, 470, btnW, 45, TRUE);
-    MoveWindow(g_hWndForward3, 5 + 3 * btnW, 470, btnW, 45, TRUE);
-    MoveWindow(g_hWndForward5, 5 + 4 * btnW, 470, btnW, 45, TRUE);
-    MoveWindow(g_hWndBrowse, 5 + 5 * btnW, 470, btnW, 45, TRUE);
+    MoveWindow(g_hWndBack5, 5, 452, btnW, 45, TRUE);
+    MoveWindow(g_hWndBack3, 5 + btnW, 452, btnW, 45, TRUE);
+    MoveWindow(g_hWndPlayPause, 5 + 2 * btnW, 452, btnW, 45, TRUE);
+    MoveWindow(g_hWndForward3, 5 + 3 * btnW, 452, btnW, 45, TRUE);
+    MoveWindow(g_hWndForward5, 5 + 4 * btnW, 452, btnW, 45, TRUE);
+    MoveWindow(g_hWndBrowse, 5 + 5 * btnW, 452, btnW, 45, TRUE);
 
     // Grid Row 1 (Mark Start, Mark End, Checkbox, Add to Cut)
     int grW = (clientWidth - 20) / 4;
-    MoveWindow(g_hWndSetStart, 5, 525, grW - 75, 45, TRUE);
-    MoveWindow(g_hWndTxtStart, 5 + grW - 70, 537, 65, 22, TRUE);
+    MoveWindow(g_hWndSetStart, 5, 507, grW - 75, 45, TRUE);
+    MoveWindow(g_hWndTxtStart, 5 + grW - 70, 519, 65, 22, TRUE);
 
-    MoveWindow(g_hWndSetEnd, 5 + grW, 525, grW - 75, 45, TRUE);
-    MoveWindow(g_hWndTxtEnd, 5 + grW + grW - 70, 537, 65, 22, TRUE);
+    MoveWindow(g_hWndSetEnd, 5 + grW, 507, grW - 75, 45, TRUE);
+    MoveWindow(g_hWndTxtEnd, 5 + grW + grW - 70, 519, 65, 22, TRUE);
 
-    MoveWindow(g_hWndChkKeyframes, 5 + 2 * grW + 10, 528, grW - 20, 38, TRUE);
-    MoveWindow(g_hWndAddCut, 5 + 3 * grW, 525, grW, 45, TRUE);
+    MoveWindow(g_hWndChkKeyframes, 5 + 2 * grW + 10, 510, grW - 20, 38, TRUE);
+    MoveWindow(g_hWndAddCut, 5 + 3 * grW, 507, grW, 45, TRUE);
 
     // Subtitle File Name label above List View
-    MoveWindow(g_hWndFileLabel, 10, 580, clientWidth - 20, 20, TRUE);
+    MoveWindow(g_hWndFileLabel, 10, 562, clientWidth - 20, 20, TRUE);
 
     // List View (Middle scroll panel)
-    int listTop = 605;
+    int listTop = 587;
     int listBottom = clientHeight - 80;
     MoveWindow(g_hWndCutsList, 5, listTop, clientWidth - 10, listBottom - listTop, TRUE);
 

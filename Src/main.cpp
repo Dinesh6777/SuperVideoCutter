@@ -1359,7 +1359,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     RegisterClassW(&wc);
 
     g_hWndMain = CreateWindowExW(0, L"SuperVideoCutterMainClass", L"SuperVideoCutter",
-        WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 850, 950,
+        WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 754, 854,
         NULL, NULL, hInstance, NULL);
 
     if (!g_hWndMain) return 0;

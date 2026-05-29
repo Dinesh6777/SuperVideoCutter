@@ -1,6 +1,6 @@
 # SuperVideoCutter
 
-**SuperVideoCutter** is a portable, high-performance, lossless video trimmer built on the **.NET 10** framework. It is designed for speed and simplicity, allowing users to cut video segments without re-encoding, which preserves the original visual quality and processes files almost instantly.
+**SuperVideoCutter** is a portable, high-performance, lossless multi cut video trimmer built. It is designed for speed and simplicity, allowing users to cut video segments without re-encoding, which preserves the original visual quality and processes files almost instantly.
 
 ## App preview
 <img width="550" height="650" alt="image" src="https://github.com/user-attachments/assets/1e94ce2f-f194-46da-9b28-0ec29fd9c3ee" />

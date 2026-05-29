@@ -6,14 +6,14 @@ processorArchitecture='*' \
 publicKeyToken='6595b64144ccf1df' \
 language='*'\"")
 
-#pragma comment(lib, "urlmon.lib")
+#pragma comment(lib, "wininet.lib")
 #pragma comment(lib, "comctl32.lib")
 
 #include <windows.h>
 #include <commctrl.h>
 #include <shellapi.h>
 #include <shlobj.h>
-#include <urlmon.h>
+#include <wininet.h>
 #include <string>
 #include <vector>
 #include <thread>
@@ -173,14 +173,20 @@ std::wstring CheckDependency(const std::wstring& toolName) {
     if (GetFileAttributesW(localPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
         return localPath;
     }
+
+    // 2. Check inside SuperVideoCutter_Data folder next to exe (portable dynamic setup)
+    std::wstring dataPath = exeDir + L"\\SuperVideoCutter_Data\\" + toolName;
+    if (GetFileAttributesW(dataPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        return dataPath;
+    }
     
-    // 2. Check in SuperVideoCutter_plugins subfolder (download fallback)
+    // 3. Check in SuperVideoCutter_plugins subfolder (download fallback)
     std::wstring pluginPath = exeDir + L"\\SuperVideoCutter_plugins\\" + toolName;
     if (GetFileAttributesW(pluginPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
         return pluginPath;
     }
 
-    // 3. Check system path using native SearchPathW API
+    // 4. Check system path using native SearchPathW API
     wchar_t pathBuf[MAX_PATH];
     wchar_t* filePart;
     DWORD res = SearchPathW(NULL, toolName.c_str(), NULL, MAX_PATH, pathBuf, &filePart);
@@ -198,44 +204,285 @@ bool CheckAllTools(std::wstring& ffmpegPath, std::wstring& ffprobePath, std::wst
     return (!ffmpegPath.empty() && !ffprobePath.empty() && !vlcPath.empty());
 }
 
-// BindStatusCallback COM Class to report active download progress natively
-class BindStatusCallback : public IBindStatusCallback {
-public:
-    HWND hWndProgress;
-    HWND hDlg;
-    std::wstring m_itemName;
+// Modern secure WinINet Downloader Engine to replace COM downloader callbacks
+HRESULT DownloadFileWithProgress(const std::wstring& url, const std::wstring& destPath, HWND hWndProgress, HWND hWndText, const std::wstring& taskName) {
+    HINTERNET hSession = InternetOpenW(L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (!hSession) return E_FAIL;
 
-    BindStatusCallback(HWND progress, HWND dlg, const std::wstring& itemName)
-        : hWndProgress(progress), hDlg(dlg), m_itemName(itemName) {}
-
-    STDMETHODIMP QueryInterface(REFIID riid, void** ppv) override {
-        if (riid == IID_IUnknown || riid == IID_IBindStatusCallback) {
-            *ppv = static_cast<IBindStatusCallback*>(this);
-            return S_OK;
-        }
-        return E_NOINTERFACE;
+    HINTERNET hUrl = InternetOpenUrlW(hSession, url.c_str(), NULL, 0, INTERNET_FLAG_RELOAD | INTERNET_FLAG_DONT_CACHE, 0);
+    if (!hUrl) {
+        InternetCloseHandle(hSession);
+        return E_FAIL;
     }
-    STDMETHODIMP_(ULONG) AddRef() override { return 1; }
-    STDMETHODIMP_(ULONG) Release() override { return 1; }
 
-    STDMETHODIMP OnStartBinding(DWORD dwReserved, IBinding* pib) override { return S_OK; }
-    STDMETHODIMP GetPriority(LONG* pnPriority) override { return S_OK; }
-    STDMETHODIMP OnLowResource(DWORD reserved) override { return S_OK; }
-    STDMETHODIMP OnProgress(ULONG ulProgress, ULONG ulProgressMax, ULONG ulStatusCode, LPCWSTR szStatusText) override {
-        if (ulProgressMax > 0) {
-            int percent = static_cast<int>((ulProgress * 100ULL) / ulProgressMax);
+    // Get Content Length
+    wchar_t szContentLength[32] = { 0 };
+    DWORD dwBufferLen = sizeof(szContentLength);
+    DWORD dwIndex = 0;
+    long long totalBytes = -1;
+    if (HttpQueryInfoW(hUrl, HTTP_QUERY_CONTENT_LENGTH, szContentLength, &dwBufferLen, &dwIndex)) {
+        totalBytes = _wtoi64(szContentLength);
+    }
+
+    HANDLE hFile = CreateFileW(destPath.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        InternetCloseHandle(hUrl);
+        InternetCloseHandle(hSession);
+        return E_FAIL;
+    }
+
+    char buffer[16384]; // 16KB read buffer
+    DWORD bytesRead = 0;
+    long long downloadedBytes = 0;
+    bool success = true;
+
+    while (InternetReadFile(hUrl, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
+        DWORD bytesWritten = 0;
+        if (!WriteFile(hFile, buffer, bytesRead, &bytesWritten, NULL) || bytesWritten != bytesRead) {
+            success = false;
+            break;
+        }
+        downloadedBytes += bytesRead;
+        if (totalBytes > 0) {
+            int percent = static_cast<int>((downloadedBytes * 100) / totalBytes);
             SendMessageW(hWndProgress, PBM_SETPOS, percent, 0);
-            
-            std::wstring label = L"Downloading " + m_itemName + L"... (" + std::to_wstring(percent) + L"%)";
-            SetDlgItemTextW(hDlg, 1002, label.c_str());
+
+            wchar_t progressText[128];
+            swprintf_s(progressText, 128, L"%s: %d%% (%lld MB / %lld MB)", taskName.c_str(), percent, downloadedBytes / (1024 * 1024), totalBytes / (1024 * 1024));
+            SetWindowTextW(hWndText, progressText);
+        } else {
+            wchar_t progressText[128];
+            swprintf_s(progressText, 128, L"%s: %lld MB downloaded", taskName.c_str(), downloadedBytes / (1024 * 1024));
+            SetWindowTextW(hWndText, progressText);
         }
-        return S_OK;
     }
-    STDMETHODIMP OnStopBinding(HRESULT hresult, LPCWSTR szError) override { return S_OK; }
-    STDMETHODIMP GetBindInfo(DWORD* grfBINDF, BINDINFO* pbindinfo) override { return S_OK; }
-    STDMETHODIMP OnDataAvailable(DWORD grfBSCF, DWORD dwSize, FORMATETC* pformatetc, STGMEDIUM* pstgmed) override { return S_OK; }
-    STDMETHODIMP OnObjectAvailable(REFIID riid, IUnknown* punk) override { return S_OK; }
-};
+
+    CloseHandle(hFile);
+    InternetCloseHandle(hUrl);
+    InternetCloseHandle(hSession);
+
+    if (!success) {
+        DeleteFileW(destPath.c_str());
+        return E_FAIL;
+    }
+    return S_OK;
+}
+
+void DeleteDirectoryRecursive(const std::wstring& path) {
+    std::wstring searchPath = path + L"\\*";
+    WIN32_FIND_DATAW ffd;
+    HANDLE hFind = FindFirstFileW(searchPath.c_str(), &ffd);
+    if (hFind == INVALID_HANDLE_VALUE) {
+        RemoveDirectoryW(path.c_str());
+        return;
+    }
+
+    do {
+        std::wstring name = ffd.cFileName;
+        if (name == L"." || name == L"..") continue;
+
+        std::wstring fullPath = path + L"\\" + name;
+        if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            DeleteDirectoryRecursive(fullPath);
+        } else {
+            SetFileAttributesW(fullPath.c_str(), FILE_ATTRIBUTE_NORMAL);
+            DeleteFileW(fullPath.c_str());
+        }
+    } while (FindNextFileW(hFind, &ffd) != 0);
+
+    FindClose(hFind);
+    SetFileAttributesW(path.c_str(), FILE_ATTRIBUTE_NORMAL);
+    RemoveDirectoryW(path.c_str());
+}
+
+std::wstring FindFilePathRecursive(const std::wstring& searchDir, const std::wstring& filename) {
+    std::wstring searchPath = searchDir + L"\\*";
+    WIN32_FIND_DATAW ffd;
+    HANDLE hFind = FindFirstFileW(searchPath.c_str(), &ffd);
+    if (hFind == INVALID_HANDLE_VALUE) return L"";
+
+    std::wstring foundPath = L"";
+    do {
+        std::wstring name = ffd.cFileName;
+        if (name == L"." || name == L"..") continue;
+
+        std::wstring fullPath = searchDir + L"\\" + name;
+        if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            foundPath = FindFilePathRecursive(fullPath, filename);
+            if (!foundPath.empty()) break;
+        } else {
+            std::wstring lowerName = name;
+            for (auto& c : lowerName) c = towlower(c);
+            std::wstring lowerTarget = filename;
+            for (auto& c : lowerTarget) c = towlower(c);
+
+            if (lowerName == lowerTarget) {
+                foundPath = fullPath;
+                break;
+            }
+        }
+    } while (FindNextFileW(hFind, &ffd) != 0);
+
+    FindClose(hFind);
+    return foundPath;
+}
+
+std::wstring FindDirectoryPathRecursive(const std::wstring& searchDir, const std::wstring& dirName) {
+    std::wstring searchPath = searchDir + L"\\*";
+    WIN32_FIND_DATAW ffd;
+    HANDLE hFind = FindFirstFileW(searchPath.c_str(), &ffd);
+    if (hFind == INVALID_HANDLE_VALUE) return L"";
+
+    std::wstring foundPath = L"";
+    do {
+        std::wstring name = ffd.cFileName;
+        if (name == L"." || name == L"..") continue;
+
+        std::wstring fullPath = searchDir + L"\\" + name;
+        if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            std::wstring lowerName = name;
+            for (auto& c : lowerName) c = towlower(c);
+            std::wstring lowerTarget = dirName;
+            for (auto& c : lowerTarget) c = towlower(c);
+
+            if (lowerName == lowerTarget) {
+                foundPath = fullPath;
+                break;
+            } else {
+                foundPath = FindDirectoryPathRecursive(fullPath, dirName);
+                if (!foundPath.empty()) break;
+            }
+        }
+    } while (FindNextFileW(hFind, &ffd) != 0);
+
+    FindClose(hFind);
+    return foundPath;
+}
+
+bool ExtractZipNative(const std::wstring& zipPath, const std::wstring& targetDir) {
+    HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) {
+        return false;
+    }
+
+    bool success = false;
+    IShellDispatch* pShell = nullptr;
+    hr = CoCreateInstance(CLSID_Shell, NULL, CLSCTX_INPROC_SERVER, IID_IShellDispatch, (void**)&pShell);
+    if (SUCCEEDED(hr)) {
+        Folder* pZipFolder = nullptr;
+        
+        VARIANT varZip;
+        VariantInit(&varZip);
+        varZip.vt = VT_BSTR;
+        varZip.bstrVal = SysAllocString(zipPath.c_str());
+
+        hr = pShell->NameSpace(varZip, &pZipFolder);
+        if (SUCCEEDED(hr) && pZipFolder) {
+            Folder* pDestFolder = nullptr;
+            
+            VARIANT varDest;
+            VariantInit(&varDest);
+            varDest.vt = VT_BSTR;
+            varDest.bstrVal = SysAllocString(targetDir.c_str());
+
+            hr = pShell->NameSpace(varDest, &pDestFolder);
+            if (SUCCEEDED(hr) && pDestFolder) {
+                FolderItems* pItems = nullptr;
+                hr = pZipFolder->Items(&pItems);
+                if (SUCCEEDED(hr) && pItems) {
+                    VARIANT varFlags;
+                    VariantInit(&varFlags);
+                    varFlags.vt = VT_I4;
+                    varFlags.lVal = 4 | 16 | 512; // FOF_SILENT | FOF_NOCONFIRMATION | FOF_NOERRORUI
+
+                    VARIANT varItems;
+                    VariantInit(&varItems);
+                    varItems.vt = VT_DISPATCH;
+                    varItems.pdispVal = pItems;
+
+                    hr = pDestFolder->CopyHere(varItems, varFlags);
+                    if (SUCCEEDED(hr)) {
+                        success = true;
+                    }
+                    pItems->Release();
+                }
+                pDestFolder->Release();
+            }
+            pZipFolder->Release();
+            VariantClear(&varDest);
+        }
+        VariantClear(&varZip);
+        pShell->Release();
+    }
+
+    CoUninitialize();
+    return success;
+}
+
+bool ExtractAndStructureZip(const std::wstring& zipPath, const std::wstring& targetDir, const std::vector<std::wstring>& requiredFiles, const std::vector<std::wstring>& requiredDirs) {
+    std::wstring tempExtractDir = targetDir + L"\\temp_extract";
+    DeleteDirectoryRecursive(tempExtractDir);
+    CreateDirectoryW(tempExtractDir.c_str(), NULL);
+
+    if (!ExtractZipNative(zipPath, tempExtractDir)) {
+        DeleteDirectoryRecursive(tempExtractDir);
+        return false;
+    }
+
+    DWORD start = GetTickCount();
+    bool allReady = false;
+    while (GetTickCount() - start < 30000) {
+        bool currentReady = true;
+        for (const auto& file : requiredFiles) {
+            std::wstring found = FindFilePathRecursive(tempExtractDir, file);
+            if (found.empty()) {
+                currentReady = false;
+                break;
+            }
+            HANDLE hFile = CreateFileW(found.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+            if (hFile == INVALID_HANDLE_VALUE) {
+                currentReady = false;
+                break;
+            }
+            CloseHandle(hFile);
+        }
+        if (currentReady) {
+            allReady = true;
+            break;
+        }
+        Sleep(200);
+    }
+
+    if (!allReady) {
+        DeleteDirectoryRecursive(tempExtractDir);
+        return false;
+    }
+
+    Sleep(500);
+
+    for (const auto& file : requiredFiles) {
+        std::wstring found = FindFilePathRecursive(tempExtractDir, file);
+        if (!found.empty()) {
+            std::wstring destPath = targetDir + L"\\" + file;
+            DeleteFileW(destPath.c_str());
+            MoveFileExW(found.c_str(), destPath.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED);
+        }
+    }
+
+    for (const auto& dir : requiredDirs) {
+        std::wstring found = FindDirectoryPathRecursive(tempExtractDir, dir);
+        if (!found.empty()) {
+            std::wstring destPath = targetDir + L"\\" + dir;
+            DeleteDirectoryRecursive(destPath);
+            MoveFileExW(found.c_str(), destPath.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED);
+        }
+    }
+
+    DeleteDirectoryRecursive(tempExtractDir);
+    DeleteFileW(zipPath.c_str());
+    return true;
+}
+
 
 // Background downloader procedure
 void BackgroundDownloaderThread(HWND hWndProgress, HWND hDlg) {
@@ -260,8 +507,8 @@ void BackgroundDownloaderThread(HWND hWndProgress, HWND hDlg) {
     
     if (ffmpegNeed) {
         SendMessageW(hWndProgress, PBM_SETPOS, 0, 0);
-        BindStatusCallback callback(hWndProgress, hDlg, L"FFmpeg");
-        HRESULT hr = URLDownloadToFileW(NULL, ffmpegUrl.c_str(), ffmpegDest.c_str(), 0, &callback);
+        HWND hWndText = GetDlgItem(hDlg, 1002);
+        HRESULT hr = DownloadFileWithProgress(ffmpegUrl, ffmpegDest, hWndProgress, hWndText, L"Downloading FFmpeg");
         if (FAILED(hr)) {
             MessageBoxW(hDlg, L"Failed to download FFmpeg.", L"Error", MB_OK | MB_ICONERROR);
             EndDialog(hDlg, IDCANCEL);
@@ -275,31 +522,7 @@ void BackgroundDownloaderThread(HWND hWndProgress, HWND hDlg) {
         SetWindowPos(hWndProgress, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
         SendMessageW(hWndProgress, PBM_SETMARQUEE, TRUE, 0);
         
-        std::wstring script = L"Powershell -NoProfile -ExecutionPolicy Bypass -Command \""
-            L"Add-Type -AssemblyName System.IO.Compression.FileSystem; "
-            L"$zip = [System.IO.Compression.ZipFile]::OpenRead('" + pluginsDir + L"\\ffmpeg_temp.zip'); "
-            L"ForEach ($e in $zip.Entries) { "
-            L"  If ($e.Name -eq 'ffmpeg.exe' -or $e.Name -eq 'ffprobe.exe') { "
-            L"    [System.IO.Compression.ZipFileExtensions]::ExtractToFile($e, '" + pluginsDir + L"\\' + $e.Name, $true); "
-            L"  } "
-            L"} "
-            L"$zip.Dispose(); "
-            L"Remove-Item '" + pluginsDir + L"\\ffmpeg_temp.zip' -Force;\"";
-
-        STARTUPINFOW si = { sizeof(si) };
-        PROCESS_INFORMATION pi = { 0 };
-        si.dwFlags = STARTF_USESHOWWINDOW;
-        si.wShowWindow = SW_HIDE;
-
-        std::vector<wchar_t> cmdBuf(script.begin(), script.end());
-        cmdBuf.push_back(L'\0');
-
-        // Using CREATE_NO_WINDOW completely eliminates CMD window flash
-        if (CreateProcessW(NULL, cmdBuf.data(), NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-            WaitForSingleObject(pi.hProcess, INFINITE);
-            CloseHandle(pi.hProcess);
-            CloseHandle(pi.hThread);
-        }
+        ExtractAndStructureZip(ffmpegDest, pluginsDir, { L"ffmpeg.exe", L"ffprobe.exe" }, {});
     }
 
     // 2. Download VLC if needed
@@ -313,8 +536,8 @@ void BackgroundDownloaderThread(HWND hWndProgress, HWND hDlg) {
         SetWindowPos(hWndProgress, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
         SendMessageW(hWndProgress, PBM_SETPOS, 0, 0);
 
-        BindStatusCallback callback(hWndProgress, hDlg, L"LibVLC");
-        HRESULT hr = URLDownloadToFileW(NULL, vlcUrl.c_str(), vlcDest.c_str(), 0, &callback);
+        HWND hWndText = GetDlgItem(hDlg, 1002);
+        HRESULT hr = DownloadFileWithProgress(vlcUrl, vlcDest, hWndProgress, hWndText, L"Downloading LibVLC");
         if (FAILED(hr)) {
             MessageBoxW(hDlg, L"Failed to download LibVLC.", L"Error", MB_OK | MB_ICONERROR);
             EndDialog(hDlg, IDCANCEL);
@@ -327,38 +550,7 @@ void BackgroundDownloaderThread(HWND hWndProgress, HWND hDlg) {
         SetWindowPos(hWndProgress, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
         SendMessageW(hWndProgress, PBM_SETMARQUEE, TRUE, 0);
 
-        std::wstring script = L"Powershell -NoProfile -ExecutionPolicy Bypass -Command \""
-            L"Add-Type -AssemblyName System.IO.Compression.FileSystem; "
-            L"$zip = [System.IO.Compression.ZipFile]::OpenRead('" + pluginsDir + L"\\vlc_temp.zip'); "
-            L"$pluginsPath = New-Item -ItemType Directory -Force -Path '" + pluginsDir + L"\\plugins'; "
-            L"ForEach ($e in $zip.Entries) { "
-            L"  If ($e.Name -eq 'libvlc.dll' -or $e.Name -eq 'libvlccore.dll') { "
-            L"    [System.IO.Compression.ZipFileExtensions]::ExtractToFile($e, '" + pluginsDir + L"\\' + $e.Name, $true); "
-            L"  } ElseIf ($e.FullName -match 'plugins/.*\\.dll$') { "
-            L"    $subPath = $e.FullName.Substring($e.FullName.IndexOf('plugins/')); "
-            L"    $dest = [System.IO.Path]::Combine('" + pluginsDir + L"', $subPath); "
-            L"    $parent = Split-Path $dest; "
-            L"    If (!(Test-Path $parent)) { New-Item -ItemType Directory -Force -Path $parent }; "
-            L"    [System.IO.Compression.ZipFileExtensions]::ExtractToFile($e, $dest, $true); "
-            L"  } "
-            L"} "
-            L"$zip.Dispose(); "
-            L"Remove-Item '" + pluginsDir + L"\\vlc_temp.zip' -Force;\"";
-
-        STARTUPINFOW si = { sizeof(si) };
-        PROCESS_INFORMATION pi = { 0 };
-        si.dwFlags = STARTF_USESHOWWINDOW;
-        si.wShowWindow = SW_HIDE;
-
-        std::vector<wchar_t> cmdBuf(script.begin(), script.end());
-        cmdBuf.push_back(L'\0');
-
-        // Using CREATE_NO_WINDOW completely eliminates CMD window flash
-        if (CreateProcessW(NULL, cmdBuf.data(), NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-            WaitForSingleObject(pi.hProcess, INFINITE);
-            CloseHandle(pi.hProcess);
-            CloseHandle(pi.hThread);
-        }
+        ExtractAndStructureZip(vlcDest, pluginsDir, { L"libvlc.dll", L"libvlccore.dll" }, { L"plugins" });
     }
 
     MessageBoxW(hDlg, L"All dependencies successfully downloaded and extracted!", L"Success", MB_OK | MB_ICONINFORMATION);
@@ -983,106 +1175,6 @@ std::wstring GetPortableRunDir() {
     return L"";
 }
 
-class DownloadCallback : public IBindStatusCallback {
-public:
-    DownloadCallback(HWND hWndProgress, HWND hWndText, const std::wstring& taskName)
-        : m_hWndProgress(hWndProgress), m_hWndText(hWndText), m_taskName(taskName), m_refCount(1) {}
-
-    // IUnknown methods
-    STDMETHODIMP QueryInterface(REFIID riid, void** ppvObject) override {
-        if (riid == IID_IUnknown || riid == IID_IBindStatusCallback) {
-            *ppvObject = static_cast<IBindStatusCallback*>(this);
-            AddRef();
-            return S_OK;
-        }
-        *ppvObject = NULL;
-        return E_NOINTERFACE;
-    }
-    STDMETHODIMP_(ULONG) AddRef() override { return InterlockedIncrement(&m_refCount); }
-    STDMETHODIMP_(ULONG) Release() override {
-        ULONG ref = InterlockedDecrement(&m_refCount);
-        if (ref == 0) {
-            delete this;
-            return 0;
-        }
-        return ref;
-    }
-
-    // IBindStatusCallback methods
-    STDMETHODIMP OnStartBinding(DWORD dwReserved, IBinding* pib) override { return S_OK; }
-    STDMETHODIMP GetPriority(LONG* pnPriority) override { return S_OK; }
-    STDMETHODIMP OnLowResource(DWORD reserved) override { return S_OK; }
-    STDMETHODIMP OnProgress(ULONG ulProgress, ULONG ulProgressMax, ULONG ulStatusCode, LPCWSTR szStatusText) override {
-        if (ulProgressMax > 0) {
-            int percent = static_cast<int>((static_cast<double>(ulProgress) / ulProgressMax) * 100.0);
-            SendMessageW(m_hWndProgress, PBM_SETPOS, percent, 0);
-            
-            wchar_t buf[256];
-            swprintf_s(buf, L"%s: %d%% (%lu / %lu KB)", m_taskName.c_str(), percent, ulProgress / 1024, ulProgressMax / 1024);
-            SetWindowTextW(m_hWndText, buf);
-        } else {
-            wchar_t buf[256];
-            swprintf_s(buf, L"%s: %lu KB downloaded", m_taskName.c_str(), ulProgress / 1024);
-            SetWindowTextW(m_hWndText, buf);
-        }
-        return S_OK;
-    }
-    STDMETHODIMP OnStopBinding(HRESULT hresult, LPCWSTR szError) override { return S_OK; }
-    STDMETHODIMP GetBindInfo(DWORD* grfBINDF, BINDINFO* pbindinfo) override { return S_OK; }
-    STDMETHODIMP OnDataAvailable(DWORD grfBSCF, DWORD dwSize, FORMATETC* pformatetc, STGMEDIUM* pstgmed) override { return S_OK; }
-    STDMETHODIMP OnObjectAvailable(REFIID riid, IUnknown* punk) override { return S_OK; }
-
-private:
-    HWND m_hWndProgress;
-    HWND m_hWndText;
-    std::wstring m_taskName;
-    LONG m_refCount;
-};
-
-HRESULT DownloadFileWithProgress(const std::wstring& url, const std::wstring& destPath, HWND hWndProgress, HWND hWndText, const std::wstring& taskName) {
-    DownloadCallback* pCallback = new DownloadCallback(hWndProgress, hWndText, taskName);
-    pCallback->AddRef();
-    HRESULT hr = URLDownloadToFileW(NULL, url.c_str(), destPath.c_str(), 0, static_cast<IBindStatusCallback*>(pCallback));
-    pCallback->Release();
-    return hr;
-}
-
-bool ExtractZip(const std::wstring& zipPath, const std::wstring& targetDir, const std::wstring& arch) {
-    std::wstring script = L"Powershell -NoProfile -ExecutionPolicy Bypass -Command \""
-        L"Add-Type -AssemblyName System.IO.Compression.FileSystem; "
-        L"$zip = [System.IO.Compression.ZipFile]::OpenRead('" + zipPath + L"'); "
-        L"ForEach ($e in $zip.Entries) { "
-        L"  If ($e.Name -eq 'libvlc.dll' -or $e.Name -eq 'libvlccore.dll' -or $e.Name -eq 'ffmpeg.exe' -or $e.Name -eq 'ffprobe.exe') { "
-        L"    $dest = [System.IO.Path]::Combine('" + targetDir + L"', $e.Name); "
-        L"    [System.IO.Compression.ZipFileExtensions]::ExtractToFile($e, $dest, $true); "
-        L"  } ElseIf ($e.FullName -match 'plugins/.*\\.dll$') { "
-        L"    $subPath = $e.FullName.Substring($e.FullName.IndexOf('plugins/')); "
-        L"    $dest = [System.IO.Path]::Combine('" + targetDir + L"', $subPath); "
-        L"    $parent = Split-Path $dest; "
-        L"    If (!(Test-Path $parent)) { New-Item -ItemType Directory -Force -Path $parent }; "
-        L"    [System.IO.Compression.ZipFileExtensions]::ExtractToFile($e, $dest, $true); "
-        L"  } "
-        L"} "
-        L"$zip.Dispose(); "
-        L"Remove-Item '" + zipPath + L"' -Force;\"";
-
-    STARTUPINFOW si = { sizeof(si) };
-    PROCESS_INFORMATION pi = { 0 };
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
-
-    std::vector<wchar_t> cmdBuf(script.begin(), script.end());
-    cmdBuf.push_back(L'\0');
-
-    if (CreateProcessW(NULL, cmdBuf.data(), NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-        WaitForSingleObject(pi.hProcess, INFINITE);
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-        return true;
-    }
-    return false;
-}
-
 INT_PTR CALLBACK ExtractionDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_INITDIALOG: {
@@ -1094,10 +1186,8 @@ INT_PTR CALLBACK ExtractionDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM l
                 
 #ifdef _WIN64
                 std::wstring vlcUrl = L"https://download.videolan.org/pub/videolan/vlc/3.0.20/win64/vlc-3.0.20-win64.zip";
-                std::wstring arch = L"x64";
 #else
                 std::wstring vlcUrl = L"https://download.videolan.org/pub/videolan/vlc/3.0.20/win32/vlc-3.0.20-win32.zip";
-                std::wstring arch = L"x86";
 #endif
                 std::wstring vlcZip = runDir + L"\\vlc.zip";
                 
@@ -1117,7 +1207,7 @@ INT_PTR CALLBACK ExtractionDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM l
                 SetWindowPos(hWndProgress, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
                 SendMessageW(hWndProgress, PBM_SETMARQUEE, TRUE, 0);
                 
-                ExtractZip(vlcZip, runDir, arch);
+                ExtractAndStructureZip(vlcZip, runDir, { L"libvlc.dll", L"libvlccore.dll" }, { L"plugins" });
 
                 // Disable marquee for next download
                 SendMessageW(hWndProgress, PBM_SETMARQUEE, FALSE, 0);
@@ -1143,7 +1233,7 @@ INT_PTR CALLBACK ExtractionDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM l
                 SetWindowPos(hWndProgress, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
                 SendMessageW(hWndProgress, PBM_SETMARQUEE, TRUE, 0);
                 
-                ExtractZip(ffmpegZip, runDir, arch);
+                ExtractAndStructureZip(ffmpegZip, runDir, { L"ffmpeg.exe", L"ffprobe.exe" }, {});
 
                 EndDialog(hDlg, IDOK);
             }).detach();
@@ -1153,45 +1243,11 @@ INT_PTR CALLBACK ExtractionDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM l
     return FALSE;
 }
 
-void LaunchRelaunchCopy(const std::wstring& runDir, const std::wstring& currentExe, LPWSTR lpCmdLine) {
-    std::wstring targetExe = runDir + L"\\SuperVideoCutter.exe";
-    
-    // Copy current executable to runDir\SuperVideoCutter.exe
-    CopyFileW(currentExe.c_str(), targetExe.c_str(), FALSE);
-    
-    // Launch the copy and exit
-    STARTUPINFOW si = { sizeof(si) };
-    PROCESS_INFORMATION pi = { 0 };
-    
-    std::wstring cmd = L"\"" + targetExe + L"\" " + lpCmdLine;
-    std::vector<wchar_t> cmdBuf(cmd.begin(), cmd.end());
-    cmdBuf.push_back(L'\0');
-    
-    if (CreateProcessW(NULL, cmdBuf.data(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-    }
-}
-
 // Entry Point
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow) {
-    wchar_t exePath[MAX_PATH];
-    GetModuleFileNameW(NULL, exePath, MAX_PATH);
-    std::wstring currentExe = exePath;
     std::wstring runDir = GetPortableRunDir();
 
-    bool alreadyInRunDir = false;
     if (!runDir.empty()) {
-        std::wstring lowerExe = currentExe;
-        std::wstring lowerRunDir = runDir;
-        for (auto& c : lowerExe) c = towlower(c);
-        for (auto& c : lowerRunDir) c = towlower(c);
-        if (lowerExe.find(lowerRunDir) == 0) {
-            alreadyInRunDir = true;
-        }
-    }
-
-    if (!alreadyInRunDir && !runDir.empty()) {
         // Create directory
         CreateDirectoryW(runDir.c_str(), NULL);
         
@@ -1234,18 +1290,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
             DeleteFileW((runDir + L"\\libvlc.dll").c_str());
             DeleteFileW((runDir + L"\\libvlccore.dll").c_str());
             // Remove old plugins directory
-            std::wstring delPluginsCmd = L"Powershell -NoProfile -ExecutionPolicy Bypass -Command \"Remove-Item -Recurse -Force -ErrorAction SilentlyContinue '" + runDir + L"\\plugins'\"";
-            std::vector<wchar_t> delCmdBuf(delPluginsCmd.begin(), delPluginsCmd.end());
-            delCmdBuf.push_back(L'\0');
-            STARTUPINFOW delSi = { sizeof(delSi) };
-            PROCESS_INFORMATION delPi = { 0 };
-            delSi.dwFlags = STARTF_USESHOWWINDOW;
-            delSi.wShowWindow = SW_HIDE;
-            if (CreateProcessW(NULL, delCmdBuf.data(), NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &delSi, &delPi)) {
-                WaitForSingleObject(delPi.hProcess, 5000);
-                CloseHandle(delPi.hProcess);
-                CloseHandle(delPi.hThread);
-            }
+            DeleteDirectoryRecursive(runDir + L"\\plugins");
 
             // Show center-aligned extraction progress dialog
             #pragma pack(push, 2)
@@ -1333,10 +1378,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
                 CloseHandle(hFile);
             }
         }
-
-        // Copy ourselves and relaunch the copy from extracted directory
-        LaunchRelaunchCopy(runDir, currentExe, lpCmdLine);
-        return 0; // Terminate launcher process
     }
 
     // Initialize standard and progress bar common controls
